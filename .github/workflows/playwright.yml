@@ -9,12 +9,20 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:  # 手动触发
 jobs:
-  # 原有：push/PR 时运行全部 Playwright 测试
+  # push/PR 时运行自动签到（与 signin 相同操作，但不重试）
   test:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    timeout-minutes: 60
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     env:
+      TARGET_URL: ${{ secrets.TARGET_URL }}
+      LOGIN_URL: ${{ secrets.LOGIN_URL }}
+      LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
+      LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
+      SIGNIN_URL: ${{ secrets.SIGNIN_URL }}
+      HEADLESS: 'true'
+      TIMEOUT: '30000'
+      IYUU_TOKEN: ${{ secrets.IYUU_TOKEN }}
       RETRIES: '0'  # test job 不自动重试
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +33,16 @@ jobs:
         run: npm ci
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
-      - name: Run Playwright tests
-        run: npx playwright test
+      - name: Create storage directories
+        run: mkdir -p storage/cookies storage/screenshots storage/logs
+      - name: Run auto signin
+        run: npm run signin
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 30
+          name: signin-logs
+          path: storage/logs/
+          retention-days: 7
 
   # 定时任务或手动触发：运行自动签到
   signin:
