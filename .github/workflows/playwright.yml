@@ -1,0 +1,72 @@
+name: Playwright Tests & Scheduled Signin
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # 每天 UTC 1:00 执行（北京时间 9:00）
+    - cron: '0 1 * * *'
+jobs:
+  # 原有：push/PR 时运行全部 Playwright 测试
+  test:
+    if: github.event_name != 'schedule'
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      - name: Run Playwright tests
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+  # 定时任务：仅 schedule 触发时运行自动签到
+  signin:
+    if: github.event_name == 'schedule'
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    env:
+      TARGET_URL: ${{ secrets.TARGET_URL }}
+      LOGIN_URL: ${{ secrets.LOGIN_URL }}
+      LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
+      LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
+      SIGNIN_URL: ${{ secrets.SIGNIN_URL }}
+      HEADLESS: 'true'
+      TIMEOUT: '30000'
+      IYUU_TOKEN: ${{ secrets.IYUU_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      - name: Create storage directories
+        run: mkdir -p storage/cookies storage/screenshots storage/logs
+      - name: Run auto signin
+        run: npm run signin
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: signin-screenshots
+          path: storage/screenshots/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: signin-logs
+          path: storage/logs/
+          retention-days: 7

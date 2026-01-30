@@ -1,0 +1,26 @@
+{
+  "name": "doudou-playwright",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "signin": "node index.js",
+    "signin:debug": "node index.js --headed",
+    "test:login": "npx playwright test tests/login.spec.js",
+    "test:signin": "npx playwright test tests/signin.spec.js",
+    "test:auto": "npx playwright test tests/auto-signin.spec.js",
+    "test:notification": "node test-notification.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^25.1.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "node-cron": "^4.2.1"
+  }
+}
