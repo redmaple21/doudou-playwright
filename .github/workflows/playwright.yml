@@ -62,12 +62,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: signin-screenshots
-          path: storage/screenshots/
-          retention-days: 7
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
           name: signin-logs
           path: storage/logs/
           retention-days: 7
