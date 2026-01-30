@@ -14,6 +14,8 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    env:
+      RETRIES: '0'  # test job 不自动重试
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
