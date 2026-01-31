@@ -5,48 +5,11 @@ on:
   pull_request:
     branches: [ main, master ]
   schedule:
-    # 每天 UTC 0:00 执行（北京时间 8:00）
+    # 每天 UTC 22:30 执行（北京时间次日 6:30）
     - cron: '30 22 * * *'
   workflow_dispatch:  # 手动触发
 jobs:
-  # push/PR 时运行自动签到（与 signin 相同操作，但不重试）
-  test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    env:
-      TARGET_URL: ${{ secrets.TARGET_URL }}
-      LOGIN_URL: ${{ secrets.LOGIN_URL }}
-      LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
-      LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
-      SIGNIN_URL: ${{ secrets.SIGNIN_URL }}
-      HEADLESS: 'true'
-      TIMEOUT: '30000'
-      IYUU_TOKEN: ${{ secrets.IYUU_TOKEN }}
-      RETRIES: '0'  # test job 不自动重试
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-      - name: Install dependencies
-        run: npm ci
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
-      - name: Create storage directories
-        run: mkdir -p storage/cookies storage/screenshots storage/logs
-      - name: Run auto signin
-        run: npm run signin
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: signin-logs
-          path: storage/logs/
-          retention-days: 7
-
-  # 定时任务或手动触发：运行自动签到
   signin:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 15
     runs-on: ubuntu-latest
     env:
@@ -58,21 +21,42 @@ jobs:
       HEADLESS: 'true'
       TIMEOUT: '30000'
       IYUU_TOKEN: ${{ secrets.IYUU_TOKEN }}
+      # push/PR 不重试，定时或手动触发使用默认重试
+      RETRIES: ${{ (github.event_name == 'push' || github.event_name == 'pull_request') && '0' || '2' }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
       - name: Install dependencies
         run: npm ci
+
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
+
       - name: Create storage directories
         run: mkdir -p storage/cookies storage/screenshots storage/logs
+
       - name: Run auto signin
         run: npm run signin
+
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: !cancelled()
         with:
           name: signin-logs
           path: storage/logs/
