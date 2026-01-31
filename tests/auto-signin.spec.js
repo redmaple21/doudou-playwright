@@ -121,28 +121,56 @@ test('自动签到完整流程', async ({ browser }) => {
       return;
     }
     
-    // 执行签到
+    // 执行签到（同时监听签到接口响应以获取返回信息）
+    const apiPattern = process.env.SIGNIN_API_URL_PATTERN || ''; // 可选：在 .env 中设置，如 "sign" "checkin" "qiandao" 等，用于精确匹配签到接口 URL
+    const isSigninResponse = (resp) => {
+      if (resp.status() !== 200) return false;
+      const url = resp.url();
+      const method = resp.request().method();
+      if (/\.(js|css|png|jpg|ico|woff2?)(\?|$)/i.test(url)) return false;
+      if (apiPattern) return url.includes(apiPattern);
+      return method === 'POST' || (method === 'GET' && !url.includes('.'));
+    };
+
     info('点击签到按钮');
-    await page.getByRole('button', { name: /立即续命/ }).click();
+    const [signinResponse] = await Promise.all([
+      page.waitForResponse(isSigninResponse, { timeout: 10000 }),
+      page.getByRole('button', { name: /立即续命/ }).click()
+    ]);
+
+    let signinData = null;
+    try {
+      const contentType = signinResponse.headers()['content-type'] || '';
+      signinData = contentType.includes('application/json')
+        ? await signinResponse.json()
+        : await signinResponse.text();
+      info('签到接口返回: ' + JSON.stringify(signinData, null, 2));
+    } catch (e) {
+      info('签到接口返回(解析失败): ' + (await signinResponse.text().catch(() => '')));
+    }
+
     await page.waitForTimeout(2000);
-    
+
     // 验证签到成功（等待"知道了"按钮出现）
     await page.waitForSelector('text=知道了', { timeout: 5000 });
-    
+
     // 点击"知道了"关闭提示
     await page.getByText('知道了').click();
-    
+
     success('签到成功！');
-    
+
     // 截图保存结果
     const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-    await page.screenshot({ 
+    await page.screenshot({
       path: `storage/screenshots/auto-signin-success-${timestamp}.png`,
-      fullPage: true 
+      fullPage: true
     });
-    
-    // 发送微信通知
-    await notifySigninSuccess('✅ 签到成功');
+
+    // 发送微信通知（可带上接口返回信息）
+    const resultMessage = signinData != null
+      ? `✅ 签到成功\n接口返回: ${JSON.stringify(signinData)}`
+      : '✅ 签到成功';
+    await notifySigninSuccess(resultMessage);
     
     info('========================================');
     info('任务完成：签到成功');
