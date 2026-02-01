@@ -6,6 +6,30 @@ import { info, success, error, warning } from '../utils/logger.js';
 import { notifySigninSuccess, notifySigninFailure, notifyAlreadySigned } from '../utils/notifier.js';
 
 /**
+ * 将签到接口返回格式化为可读文案（避免 \uXXXX 在微信里不可读）
+ * @param {object|string|null} signinData - 接口返回的 JSON 对象或字符串
+ * @returns {string} 用于通知的文案
+ */
+function formatSigninMessage(signinData) {
+  if (signinData == null) return '✅ 签到成功';
+  let obj = signinData;
+  if (typeof signinData === 'string') {
+    try {
+      obj = JSON.parse(signinData);
+    } catch {
+      return '✅ 签到成功\n' + signinData;
+    }
+  }
+  if (obj && typeof obj.msg === 'string') {
+    return `✅ 签到成功\n${obj.msg}`;
+  }
+  if (obj && typeof obj === 'object' && obj.msg !== undefined) {
+    return '✅ 签到成功\n' + String(obj.msg);
+  }
+  return '✅ 签到成功';
+}
+
+/**
  * 自动签到完整流程
  * 
  * 流程：
@@ -166,11 +190,8 @@ test('自动签到完整流程', async ({ browser }) => {
       fullPage: true
     });
 
-    // 发送微信通知（可带上接口返回信息）
-    const resultMessage = signinData != null
-      ? `✅ 签到成功\n接口返回: ${JSON.stringify(signinData)}`
-      : '✅ 签到成功';
-    await notifySigninSuccess(resultMessage);
+    // 发送微信通知（接口返回的 msg 已格式化为可读中文）
+    await notifySigninSuccess(formatSigninMessage(signinData));
     
     info('========================================');
     info('任务完成：签到成功');
