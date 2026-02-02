@@ -181,7 +181,9 @@ test('自动签到完整流程', async ({ browser }) => {
     // 点击"知道了"关闭提示
     await page.getByText('知道了').click();
 
+    const formattedMessage = formatSigninMessage(signinData);
     success('签到成功！');
+    info('签到结果: ' + formattedMessage);
 
     // 截图保存结果
     const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
@@ -190,8 +192,8 @@ test('自动签到完整流程', async ({ browser }) => {
       fullPage: true
     });
 
-    // 发送微信通知（接口返回的 msg 已格式化为可读中文）
-    await notifySigninSuccess(formatSigninMessage(signinData));
+    // 发送微信通知（使用与日志相同的格式化内容）
+    await notifySigninSuccess(formattedMessage);
     
     info('========================================');
     info('任务完成：签到成功');
