@@ -6,7 +6,7 @@ import { join } from 'path';
 dotenv.config({ path: join(process.cwd(), 'config', '.env') });
 
 /**
- * 消息推送工具（支持爱语飞飞推送到微信）
+ * 消息推送工具（支持爱语飞飞推送到个人微信、企业微信群机器人 Webhook）
  */
 
 /**
@@ -75,14 +75,57 @@ export async function sendWechatNotification(title, message) {
 }
 
 /**
+ * 通过企业微信群机器人 Webhook 推送消息
+ * @param {string} title - 消息标题
+ * @param {string} message - 消息内容
+ * @returns {Promise<boolean>} 是否发送成功
+ */
+export async function sendWecomNotification(title, message) {
+  const webhookUrl = process.env.WECOM_WEBHOOK_URL;
+
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return false;
+  }
+
+  try {
+    const content = `${title}\n\n${message}`;
+
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        msgtype: 'text',
+        text: { content }
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.errcode === 0) {
+      console.log('[通知] ✅ 消息已发送到企业微信');
+      return true;
+    } else {
+      console.error(`[通知] ❌ 企业微信发送失败：${result.errmsg || JSON.stringify(result)}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('[通知] ❌ 发送消息到企业微信时出错:', error.message);
+    return false;
+  }
+}
+
+/**
  * 发送签到成功通知
  * @param {string} resultMessage - 签到结果消息
  */
 export async function notifySigninSuccess(resultMessage) {
   const time = getBeijingTime();
   const message = `【豆豆签到通知】\n时间：${time}\n结果：${resultMessage}`;
-  
+
   await sendWechatNotification('豆豆签到通知', message);
+  await sendWecomNotification('豆豆签到通知', message);
 }
 
 /**
@@ -92,8 +135,9 @@ export async function notifySigninSuccess(resultMessage) {
 export async function notifySigninFailure(errorMessage) {
   const time = getBeijingTime();
   const message = `【豆豆签到通知】\n时间：${time}\n状态：❌ 签到失败\n原因：${errorMessage}`;
-  
+
   await sendWechatNotification('豆豆签到通知', message);
+  await sendWecomNotification('豆豆签到通知', message);
 }
 
 /**
@@ -102,6 +146,7 @@ export async function notifySigninFailure(errorMessage) {
 export async function notifyAlreadySigned() {
   const time = getBeijingTime();
   const message = `【豆豆签到通知】\n时间：${time}\n状态：✅ 今日已签到`;
-  
+
   await sendWechatNotification('豆豆签到通知', message);
+  await sendWecomNotification('豆豆签到通知', message);
 }

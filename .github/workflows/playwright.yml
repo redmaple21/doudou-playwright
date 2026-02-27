@@ -21,6 +21,7 @@ jobs:
             HEADLESS: 'true'
             TIMEOUT: '30000'
             IYUU_TOKEN: ${{ secrets.IYUU_TOKEN }}
+            WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
             # push/PR 不重试，定时或手动触发使用默认重试
             RETRIES: ${{ (github.event_name == 'push' || github.event_name == 'pull_request') && '0' || '2' }}
         steps:
