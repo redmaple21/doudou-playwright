@@ -30,6 +30,22 @@ function formatSigninMessage(signinData) {
 }
 
 /**
+ * 关闭进入控制面板后可能出现的公告弹窗
+ * @param {import('@playwright/test').Page} page
+ */
+async function dismissNoticeDialogIfPresent(page) {
+  const noticeButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
+  try {
+    await noticeButton.first().waitFor({ state: 'visible', timeout: 3000 });
+    info('关闭公告弹窗');
+    await noticeButton.first().click();
+    await page.waitForTimeout(500);
+  } catch {
+    info('未检测到公告弹窗，继续执行');
+  }
+}
+
+/**
  * 自动签到完整流程
  * 
  * 流程：
@@ -124,6 +140,9 @@ test('自动签到完整流程', async ({ browser }) => {
     info('进入控制面板');
     await page.getByRole('link', { name: '控制面板' }).click();
     await page.waitForLoadState('networkidle');
+
+    // 关闭进入控制面板后可能出现的公告弹窗
+    await dismissNoticeDialogIfPresent(page);
     
     // 检查是否已签到（签到按钮是否存在）
     const signinButton = page.getByRole('button', { name: /立即续命/ });
@@ -175,11 +194,12 @@ test('自动签到完整流程', async ({ browser }) => {
 
     await page.waitForTimeout(2000);
 
-    // 验证签到成功（等待"知道了"按钮出现）
-    await page.waitForSelector('text=知道了', { timeout: 5000 });
+    // 验证签到成功（等待确认按钮出现，兼容「知道了」和「好的，我知道了」）
+    const confirmButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
+    await confirmButton.waitFor({ timeout: 5000 });
 
-    // 点击"知道了"关闭提示
-    await page.getByText('知道了').click();
+    // 点击确认按钮关闭提示
+    await confirmButton.click();
 
     const formattedMessage = formatSigninMessage(signinData);
     success('签到成功！');

@@ -43,6 +43,17 @@ test.describe('签到功能', () => {
       // 2. 先导航到控制面板
       await page.getByRole('link', { name: '控制面板' }).click();
       await page.waitForLoadState('networkidle');
+
+      // 关闭进入控制面板后可能出现的公告弹窗
+      const noticeButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
+      try {
+        await noticeButton.first().waitFor({ state: 'visible', timeout: 3000 });
+        info('关闭公告弹窗');
+        await noticeButton.first().click();
+        await page.waitForTimeout(500);
+      } catch {
+        info('未检测到公告弹窗，继续执行');
+      }
       
       // 检查签到按钮是否存在（如果不存在可能已经签到）
       const SIGNIN_BUTTON = page.getByRole('button', { name: /立即续命/ });
@@ -71,11 +82,11 @@ test.describe('签到功能', () => {
       // 4. 验证签到成功
       info('验证签到结果');
       
-      // 检查"知道了"按钮是否出现（签到成功的提示）
-      const successButton = page.getByText('知道了');
+      // 检查确认按钮是否出现（签到成功的提示，兼容「知道了」和「好的，我知道了」）
+      const successButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
       await expect(successButton).toBeVisible({ timeout: 5000 });
-      
-      // 点击"知道了"关闭提示
+
+      // 点击确认按钮关闭提示
       await successButton.click();
       
       success('签到成功！');
