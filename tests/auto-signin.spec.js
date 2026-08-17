@@ -104,14 +104,9 @@ test('自动签到完整流程', async ({ browser }) => {
       // 访问登录页面
       await page.goto(getLoginUrl());
       await page.waitForLoadState('networkidle');
-      
-      // 使用从 Codegen 获取的选择器
-      const USERNAME_SELECTOR = '#email2';
-      const PASSWORD_SELECTOR = 'input[type="password"]';
-      const SUBMIT_SELECTOR = 'button:has-text("登錄")';
-      
-      // 执行登录
-      await performLogin(page, USERNAME_SELECTOR, PASSWORD_SELECTOR, SUBMIT_SELECTOR);
+
+      // 执行登录（选择器与验证码处理见 utils/auth.js，来自 codegen 录制）
+      await performLogin(page);
       
       // 验证登录成功（等待"控制面板"链接出现）
       await page.waitForSelector('a:has-text("控制面板")', { timeout: 10000 });
@@ -145,6 +140,7 @@ test('自动签到完整流程', async ({ browser }) => {
     await dismissNoticeDialogIfPresent(page);
     
     // 检查是否已签到（签到按钮是否存在）
+    // codegen: name 可能为 "fingerprint 立即续命"
     const signinButton = page.getByRole('button', { name: /立即续命/ });
     const alreadySigned = await signinButton.count() === 0;
     

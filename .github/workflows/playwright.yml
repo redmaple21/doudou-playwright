@@ -50,8 +50,39 @@ jobs:
             - name: Install Playwright Browsers
               run: npx playwright install --with-deps
 
+            - name: Cache OCR model
+              uses: actions/cache@v4
+              with:
+                  path: storage/onnx
+                  key: ddddocr-common-old-v1
+                  restore-keys: |
+                      ddddocr-common-old-
+
             - name: Create storage directories
-              run: mkdir -p storage/cookies storage/screenshots storage/logs
+              run: mkdir -p storage/cookies storage/screenshots storage/logs storage/onnx
+
+            # 复用上次成功登录的 Cookie，避免每次都走验证码登录
+            - name: Restore cookies
+              uses: actions/cache@v4
+              with:
+                  path: storage/cookies
+                  key: signin-cookies-${{ github.run_id }}
+                  restore-keys: |
+                      signin-cookies-
+
+            # 缓存为空时，用仓库 Secret 注入本地导出的 storageState
+            - name: Seed cookies from secret
+              env:
+                  STORAGE_STATE: ${{ secrets.PLAYWRIGHT_STORAGE_STATE }}
+              run: |
+                  if [ -f storage/cookies/auth.json ]; then
+                    echo "已使用缓存中的 Cookie"
+                  elif [ -n "$STORAGE_STATE" ]; then
+                    printf '%s\n' "$STORAGE_STATE" > storage/cookies/auth.json
+                    echo "已从 PLAYWRIGHT_STORAGE_STATE 写入 Cookie"
+                  else
+                    echo "无缓存 Cookie，将走 OCR 识别验证码登录"
+                  fi
 
             - name: Run auto signin
               run: npm run signin
@@ -60,5 +91,7 @@ jobs:
               if: ${{ !cancelled() }}
               with:
                   name: signin-logs
-                  path: storage/logs/
+                  path: |
+                      storage/logs/
+                      storage/screenshots/
                   retention-days: 7

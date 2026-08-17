@@ -29,15 +29,9 @@ test.describe('登录功能', () => {
       // 等待页面加载完成
       await page.waitForLoadState('networkidle');
       
-      // 2. 填写登录表单
+      // 2. 填写登录表单（选择器与验证码处理见 utils/auth.js）
       info('开始填写登录表单');
-      
-      // 从 Codegen 自动生成的选择器
-      const USERNAME_SELECTOR = '#email2';  // 邮箱输入框
-      const PASSWORD_SELECTOR = 'input[type="password"]';  // 密码输入框
-      const SUBMIT_SELECTOR = 'button:has-text("登錄")';  // 登录按钮
-      
-      await performLogin(page, USERNAME_SELECTOR, PASSWORD_SELECTOR, SUBMIT_SELECTOR);
+      await performLogin(page);
       
       // 3. 验证登录成功
       info('验证登录状态');

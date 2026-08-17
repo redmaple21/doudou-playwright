@@ -14,6 +14,8 @@ config/.env
 storage/cookies/
 storage/screenshots/
 storage/logs/
+storage/codegen-latest.js
+storage/onnx/
 
 # md
 *.md
