@@ -5,8 +5,8 @@ import { pipeline } from 'stream/promises';
 import { DdddOcr, CHARSET_RANGE } from 'ddddocr-node';
 import { info, warning } from './logger.js';
 
-const CAPTCHA_IMG = '#login-captcha-box img';
-const CAPTCHA_BOX = '#login-captcha-box';
+const LOGIN_CAPTCHA_IMG = '#login-captcha-box img';
+const LOGIN_CAPTCHA_BOX = '#login-captcha-box';
 const DEBUG_DIR = join(process.cwd(), 'storage', 'screenshots');
 const ONNX_DIR = join(process.cwd(), 'storage', 'onnx');
 const MODEL_NAME = 'common_old.onnx';
@@ -75,17 +75,23 @@ function parseOcrDigits(text) {
 
 /**
  * @param {import('@playwright/test').Page} page
+ * @param {string} imgSelector
+ * @param {string} boxSelector
  * @returns {Promise<Buffer>}
  */
-async function getCaptchaImageBuffer(page) {
-  const img = page.locator(CAPTCHA_IMG);
+async function getCaptchaImageBuffer(page, imgSelector, boxSelector) {
+  const img = page.locator(imgSelector);
   await img.waitFor({ state: 'visible', timeout: 10000 });
   await page
-    .waitForFunction(() => {
-      const el = document.querySelector('#login-captcha-box img');
-      const src = el?.getAttribute('src') || '';
-      return src.startsWith('data:image') && src.length > 1000;
-    }, undefined, { timeout: 8000 })
+    .waitForFunction(
+      ([imgSel, boxSel]) => {
+        const el = document.querySelector(imgSel) || document.querySelector(`${boxSel} img`);
+        const src = el?.getAttribute('src') || '';
+        return src.startsWith('data:image') && src.length > 1000;
+      },
+      [imgSelector, boxSelector],
+      { timeout: 8000 }
+    )
     .catch(() => {});
 
   const src = await img.getAttribute('src');
@@ -101,19 +107,21 @@ async function getCaptchaImageBuffer(page) {
 
 /**
  * @param {import('@playwright/test').Page} page
+ * @param {string} boxSelector
+ * @param {string} imgSelector
  */
-export async function refreshCaptcha(page) {
-  const img = page.locator(CAPTCHA_IMG);
-  const prevSrc = await img.getAttribute('src');
-  await page.locator(CAPTCHA_BOX).click();
+export async function refreshCaptchaInBox(page, boxSelector, imgSelector) {
+  const img = page.locator(imgSelector);
+  const prevSrc = await img.getAttribute('src').catch(() => null);
+  await page.locator(boxSelector).click();
   await page
     .waitForFunction(
-      (prev) => {
-        const el = document.querySelector('#login-captcha-box img');
+      ([prev, imgSel, boxSel]) => {
+        const el = document.querySelector(imgSel) || document.querySelector(`${boxSel} img`);
         const src = el?.getAttribute('src') || '';
         return src.startsWith('data:image') && src.length > 1000 && src !== prev;
       },
-      prevSrc,
+      [prevSrc, imgSelector, boxSelector],
       { timeout: 8000 }
     )
     .catch(() => {
@@ -123,32 +131,51 @@ export async function refreshCaptcha(page) {
 }
 
 /**
- * 仅在识别失败时保存原图，便于排查
  * @param {Buffer} original
+ * @param {string} label
  */
-function saveFailedCaptcha(original) {
+function saveFailedCaptcha(original, label = 'captcha-last') {
   try {
     mkdirSync(DEBUG_DIR, { recursive: true });
-    writeFileSync(join(DEBUG_DIR, 'captcha-last.png'), original);
+    writeFileSync(join(DEBUG_DIR, `${label}.png`), original);
   } catch {
-    // 调试图写入失败不影响登录
+    // 调试图写入失败不影响流程
   }
 }
 
 /**
- * 识别当前验证码，成功返回 4 位数字，否则返回 null
  * @param {import('@playwright/test').Page} page
  * @param {import('ddddocr-node').DdddOcr} ocr
+ * @param {string} imgSelector
+ * @param {string} boxSelector
+ * @param {string} [debugLabel]
  * @returns {Promise<string | null>}
  */
-export async function recognizeCaptcha(page, ocr) {
-  const original = await getCaptchaImageBuffer(page);
+export async function recognizeCaptchaInBox(page, ocr, imgSelector, boxSelector, debugLabel = 'captcha-last') {
+  const original = await getCaptchaImageBuffer(page, imgSelector, boxSelector);
   const rawText = await ocr.classification(original);
   const code = parseOcrDigits(rawText);
   info(`OCR 原始输出: ${JSON.stringify(rawText)}`);
   if (!code) {
     warning(`OCR 结果无效: ${JSON.stringify((rawText || '').trim())}`);
-    saveFailedCaptcha(original);
+    saveFailedCaptcha(original, debugLabel);
   }
   return code;
+}
+
+/**
+ * 识别登录页验证码
+ * @param {import('@playwright/test').Page} page
+ * @param {import('ddddocr-node').DdddOcr} ocr
+ */
+export async function recognizeCaptcha(page, ocr) {
+  return recognizeCaptchaInBox(page, ocr, LOGIN_CAPTCHA_IMG, LOGIN_CAPTCHA_BOX);
+}
+
+/**
+ * 刷新登录页验证码
+ * @param {import('@playwright/test').Page} page
+ */
+export async function refreshCaptcha(page) {
+  return refreshCaptchaInBox(page, LOGIN_CAPTCHA_BOX, LOGIN_CAPTCHA_IMG);
 }

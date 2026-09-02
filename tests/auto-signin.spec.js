@@ -4,6 +4,8 @@ import { getLoginUrl, getSigninUrl, performLogin } from '../utils/auth.js';
 import { hasSavedCookies, getCookiePath, saveCookies } from '../utils/cookie.js';
 import { info, success, error, warning } from '../utils/logger.js';
 import { notifySigninSuccess, notifySigninFailure, notifyAlreadySigned } from '../utils/notifier.js';
+import { createOcrEngine } from '../utils/captcha.js';
+import { completeCheckinCaptcha } from '../utils/checkin-captcha.js';
 
 /**
  * 将签到接口返回格式化为可读文案（避免 \uXXXX 在微信里不可读）
@@ -160,39 +162,48 @@ test('自动签到完整流程', async ({ browser }) => {
       return;
     }
     
-    // 执行签到（同时监听签到接口响应以获取返回信息）
-    const apiPattern = process.env.SIGNIN_API_URL_PATTERN || ''; // 可选：在 .env 中设置，如 "sign" "checkin" "qiandao" 等，用于精确匹配签到接口 URL
-    const isSigninResponse = (resp) => {
-      if (resp.status() !== 200) return false;
-      const url = resp.url();
-      const method = resp.request().method();
-      if (/\.(js|css|png|jpg|ico|woff2?)(\?|$)/i.test(url)) return false;
-      if (apiPattern) return url.includes(apiPattern);
-      return method === 'POST' || (method === 'GET' && !url.includes('.'));
-    };
-
+    // 执行签到（站点可能在点击后弹出签到验证码）
     info('点击签到按钮');
-    const [signinResponse] = await Promise.all([
-      page.waitForResponse(isSigninResponse, { timeout: 10000 }),
-      page.getByRole('button', { name: /立即续命/ }).click()
-    ]);
+    const signinBtn = page.getByRole('button', { name: /立即续命/ });
+    await signinBtn.click();
 
+    const checkinCaptchaVisible = await page
+      .getByText('签到验证')
+      .waitFor({ state: 'visible', timeout: 8000 })
+      .then(() => true)
+      .catch(() => false);
+    if (checkinCaptchaVisible) {
+      info('检测到签到验证码弹窗，开始 OCR 识别');
+      const ocr = await createOcrEngine();
+      await completeCheckinCaptcha(page, ocr);
+    }
+
+    // 尝试捕获签到接口返回（非阻塞，UI 成功提示才是主判断）
     let signinData = null;
+    const apiPattern = process.env.SIGNIN_API_URL_PATTERN || '';
     try {
+      const signinResponse = await page.waitForResponse((resp) => {
+        if (resp.status() !== 200) return false;
+        const url = resp.url();
+        const method = resp.request().method();
+        if (/\.(js|css|png|jpg|ico|woff2?|svg)(\?|$)/i.test(url)) return false;
+        if (apiPattern) return url.includes(apiPattern);
+        return /checkin|signin|qiandao|续命/i.test(url) || method === 'POST';
+      }, { timeout: 5000 });
       const contentType = signinResponse.headers()['content-type'] || '';
       signinData = contentType.includes('application/json')
         ? await signinResponse.json()
         : await signinResponse.text();
       info('签到接口返回: ' + JSON.stringify(signinData, null, 2));
-    } catch (e) {
-      info('签到接口返回(解析失败): ' + (await signinResponse.text().catch(() => '')));
+    } catch {
+      info('未捕获到签到接口响应，将依据页面提示判断结果');
     }
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
 
     // 验证签到成功（等待确认按钮出现，兼容「知道了」和「好的，我知道了」）
     const confirmButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
-    await confirmButton.waitFor({ timeout: 5000 });
+    await confirmButton.waitFor({ timeout: 15000 });
 
     // 点击确认按钮关闭提示
     await confirmButton.click();

@@ -71,13 +71,23 @@ test.describe('签到功能', () => {
       
       // 3. 执行签到操作
       info('开始点击签到按钮');
-      
-      // 点击"立即续命"按钮进行签到
       await page.getByRole('button', { name: /立即续命/ }).click();
-      info('已点击签到按钮');
+
+      const checkinCaptchaVisible = await page
+        .getByText('签到验证')
+        .waitFor({ state: 'visible', timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+
+      if (checkinCaptchaVisible) {
+        info('检测到签到验证码弹窗，开始 OCR 识别');
+        const { createOcrEngine } = await import('../utils/captcha.js');
+        const { completeCheckinCaptcha } = await import('../utils/checkin-captcha.js');
+        await completeCheckinCaptcha(page, await createOcrEngine());
+      }
       
-      // 等待签到完成（根据实际情况调整等待时间）
-      await page.waitForTimeout(2000);
+      // 等待签到完成
+      await page.waitForTimeout(1000);
       
       // 4. 验证签到成功
       info('验证签到结果');
