@@ -14,6 +14,7 @@ const CHARSET_NAME = 'common_old.json';
 const MODEL_URL =
   process.env.DDDDOCR_MODEL_URL ||
   'https://github.com/yangbin1322/go-ddddocr/releases/download/v1.0.1/common_old.onnx';
+const MATH_CHARSET = '0123456789+-xX*/=';
 
 /**
  * 确保 ddddocr 默认模型存在（npm 包里的 onnx 是 Git LFS 指针，不能直接用）
@@ -51,14 +52,19 @@ async function ensureOcrModel() {
 }
 
 /**
+ * @param {{ charset?: 'digits' | 'math' }} [options]
  * @returns {Promise<import('ddddocr-node').DdddOcr>}
  */
-export async function createOcrEngine() {
+export async function createOcrEngine(options = {}) {
   await ensureOcrModel();
   info('正在加载 OCR 引擎（ddddocr）...');
   const ocr = new DdddOcr();
   ocr.setPath(ONNX_DIR + sep);
-  ocr.setRanges(CHARSET_RANGE.NUM_CASE);
+  if (options.charset === 'math') {
+    ocr.setRanges(MATH_CHARSET);
+  } else {
+    ocr.setRanges(CHARSET_RANGE.NUM_CASE);
+  }
   ocr.setLogSeverityLevel(4);
   info('OCR 引擎已就绪');
   return ocr;
@@ -79,7 +85,7 @@ function parseOcrDigits(text) {
  * @param {string} boxSelector
  * @returns {Promise<Buffer>}
  */
-async function getCaptchaImageBuffer(page, imgSelector, boxSelector) {
+export async function getCaptchaImageBufferFromSelectors(page, imgSelector, boxSelector) {
   const img = page.locator(imgSelector);
   await img.waitFor({ state: 'visible', timeout: 10000 });
   await page
@@ -132,9 +138,9 @@ export async function refreshCaptchaInBox(page, boxSelector, imgSelector) {
 
 /**
  * @param {Buffer} original
- * @param {string} label
+ * @param {string} [label]
  */
-function saveFailedCaptcha(original, label = 'captcha-last') {
+export function saveFailedCaptchaImage(original, label = 'captcha-last') {
   try {
     mkdirSync(DEBUG_DIR, { recursive: true });
     writeFileSync(join(DEBUG_DIR, `${label}.png`), original);
@@ -152,19 +158,19 @@ function saveFailedCaptcha(original, label = 'captcha-last') {
  * @returns {Promise<string | null>}
  */
 export async function recognizeCaptchaInBox(page, ocr, imgSelector, boxSelector, debugLabel = 'captcha-last') {
-  const original = await getCaptchaImageBuffer(page, imgSelector, boxSelector);
+  const original = await getCaptchaImageBufferFromSelectors(page, imgSelector, boxSelector);
   const rawText = await ocr.classification(original);
   const code = parseOcrDigits(rawText);
   info(`OCR 原始输出: ${JSON.stringify(rawText)}`);
   if (!code) {
     warning(`OCR 结果无效: ${JSON.stringify((rawText || '').trim())}`);
-    saveFailedCaptcha(original, debugLabel);
+    saveFailedCaptchaImage(original, debugLabel);
   }
   return code;
 }
 
 /**
- * 识别登录页验证码
+ * 识别登录页验证码（4 位数字）
  * @param {import('@playwright/test').Page} page
  * @param {import('ddddocr-node').DdddOcr} ocr
  */

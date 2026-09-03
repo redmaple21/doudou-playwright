@@ -174,7 +174,7 @@ test('自动签到完整流程', async ({ browser }) => {
       .catch(() => false);
     if (checkinCaptchaVisible) {
       info('检测到签到验证码弹窗，开始 OCR 识别');
-      const ocr = await createOcrEngine();
+      const ocr = await createOcrEngine({ charset: 'math' });
       await completeCheckinCaptcha(page, ocr);
     }
 

@@ -83,7 +83,7 @@ test.describe('签到功能', () => {
         info('检测到签到验证码弹窗，开始 OCR 识别');
         const { createOcrEngine } = await import('../utils/captcha.js');
         const { completeCheckinCaptcha } = await import('../utils/checkin-captcha.js');
-        await completeCheckinCaptcha(page, await createOcrEngine());
+        await completeCheckinCaptcha(page, await createOcrEngine({ charset: 'math' }));
       }
       
       // 等待签到完成
