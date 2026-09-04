@@ -8,12 +8,74 @@ import { createOcrEngine } from '../utils/captcha.js';
 import { completeCheckinCaptcha } from '../utils/checkin-captcha.js';
 
 /**
+ * @param {import('@playwright/test').Response} resp
+ */
+function isLikelyCheckinResponse(resp) {
+  if (resp.status() !== 200) return false;
+  const url = resp.url();
+  const method = resp.request().method();
+  if (/\.(js|css|png|jpg|ico|woff2?|svg)(\?|$)/i.test(url)) return false;
+  if (/\/auth\/captcha/i.test(url)) return false;
+  const apiPattern = process.env.SIGNIN_API_URL_PATTERN || '';
+  if (apiPattern) return url.includes(apiPattern);
+  return /checkin|signin|qiandao|续命/i.test(url) || method === 'POST';
+}
+
+/**
+ * @param {import('@playwright/test').Response | null} resp
+ */
+async function readSigninResponse(resp) {
+  if (!resp) return null;
+  try {
+    const contentType = resp.headers()['content-type'] || '';
+    return contentType.includes('application/json')
+      ? await resp.json()
+      : await resp.text();
+  } catch {
+    return (await resp.text().catch(() => null));
+  }
+}
+
+/**
+ * 从签到成功弹窗中提取奖励文案（接口未捕获时的兜底）
+ * @param {import('@playwright/test').Page} page
+ */
+async function extractSuccessDialogMessage(page) {
+  return page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll('button')).find((el) =>
+      /好的，我知道了|知道了/.test((el.textContent || '').trim())
+    );
+    if (!btn) return '';
+
+    let root = btn.parentElement;
+    for (let i = 0; i < 8 && root; i++) {
+      const text = (root.innerText || '').replace(/\s+/g, ' ').trim();
+      if (text && /流量|豆丁|GB|MB|续命|天|小时/.test(text)) {
+        return text
+          .replace(/好的，我知道了|知道了/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      root = root.parentElement;
+    }
+
+    const candidates = Array.from(document.querySelectorAll('.swal2-html-container, .swal2-content, .modal-body, [class*="dialog"], [class*="toast"]'))
+      .map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter((t) => t && /流量|豆丁|GB|MB|续命|天|小时/.test(t));
+    return candidates[0] || '';
+  }).catch(() => '');
+}
+
+/**
  * 将签到接口返回格式化为可读文案（避免 \uXXXX 在微信里不可读）
  * @param {object|string|null} signinData - 接口返回的 JSON 对象或字符串
+ * @param {string} [dialogMessage] - 成功弹窗文案兜底
  * @returns {string} 用于通知的文案
  */
-function formatSigninMessage(signinData) {
-  if (signinData == null) return '✅ 签到成功';
+function formatSigninMessage(signinData, dialogMessage = '') {
+  if (signinData == null) {
+    return dialogMessage ? `✅ 签到成功\n${dialogMessage}` : '✅ 签到成功';
+  }
   let obj = signinData;
   if (typeof signinData === 'string') {
     try {
@@ -22,11 +84,14 @@ function formatSigninMessage(signinData) {
       return '✅ 签到成功\n' + signinData;
     }
   }
-  if (obj && typeof obj.msg === 'string') {
+  if (obj && typeof obj.msg === 'string' && obj.msg.trim()) {
     return `✅ 签到成功\n${obj.msg}`;
   }
-  if (obj && typeof obj === 'object' && obj.msg !== undefined) {
+  if (obj && typeof obj === 'object' && obj.msg !== undefined && String(obj.msg).trim()) {
     return '✅ 签到成功\n' + String(obj.msg);
+  }
+  if (dialogMessage) {
+    return `✅ 签到成功\n${dialogMessage}`;
   }
   return '✅ 签到成功';
 }
@@ -164,6 +229,10 @@ test('自动签到完整流程', async ({ browser }) => {
     
     // 执行签到（站点可能在点击后弹出签到验证码）
     info('点击签到按钮');
+    const responsePromise = page
+      .waitForResponse(isLikelyCheckinResponse, { timeout: 20000 })
+      .catch(() => null);
+
     const signinBtn = page.getByRole('button', { name: /立即续命/ });
     await signinBtn.click();
 
@@ -172,31 +241,22 @@ test('自动签到完整流程', async ({ browser }) => {
       .waitFor({ state: 'visible', timeout: 8000 })
       .then(() => true)
       .catch(() => false);
+
+    /** @type {object|string|null} */
+    let signinData = null;
     if (checkinCaptchaVisible) {
       info('检测到签到验证码弹窗，开始 OCR 识别');
       const ocr = await createOcrEngine({ charset: 'math' });
-      await completeCheckinCaptcha(page, ocr);
+      // 验证码流程里，真正的签到接口在「确认」时返回；在成功提交时单独捕获
+      signinData = await completeCheckinCaptcha(page, ocr);
+    } else {
+      signinData = await readSigninResponse(await responsePromise);
     }
 
-    // 尝试捕获签到接口返回（非阻塞，UI 成功提示才是主判断）
-    let signinData = null;
-    const apiPattern = process.env.SIGNIN_API_URL_PATTERN || '';
-    try {
-      const signinResponse = await page.waitForResponse((resp) => {
-        if (resp.status() !== 200) return false;
-        const url = resp.url();
-        const method = resp.request().method();
-        if (/\.(js|css|png|jpg|ico|woff2?|svg)(\?|$)/i.test(url)) return false;
-        if (apiPattern) return url.includes(apiPattern);
-        return /checkin|signin|qiandao|续命/i.test(url) || method === 'POST';
-      }, { timeout: 5000 });
-      const contentType = signinResponse.headers()['content-type'] || '';
-      signinData = contentType.includes('application/json')
-        ? await signinResponse.json()
-        : await signinResponse.text();
+    if (signinData != null) {
       info('签到接口返回: ' + JSON.stringify(signinData, null, 2));
-    } catch {
-      info('未捕获到签到接口响应，将依据页面提示判断结果');
+    } else {
+      info('未捕获到签到接口响应，将尝试从成功弹窗提取奖励信息');
     }
 
     await page.waitForTimeout(1000);
@@ -205,10 +265,12 @@ test('自动签到完整流程', async ({ browser }) => {
     const confirmButton = page.getByRole('button', { name: /好的，我知道了|知道了/ });
     await confirmButton.waitFor({ timeout: 15000 });
 
+    const dialogMessage = await extractSuccessDialogMessage(page);
+
     // 点击确认按钮关闭提示
     await confirmButton.click();
 
-    const formattedMessage = formatSigninMessage(signinData);
+    const formattedMessage = formatSigninMessage(signinData, dialogMessage);
     success('签到成功！');
     info('签到结果: ' + formattedMessage);
 

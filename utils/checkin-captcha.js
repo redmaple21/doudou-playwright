@@ -164,9 +164,39 @@ async function submitCheckinCaptcha(page) {
 }
 
 /**
+ * @param {import('@playwright/test').Response} resp
+ */
+function isLikelyCheckinResponse(resp) {
+  if (resp.status() !== 200) return false;
+  const url = resp.url();
+  const method = resp.request().method();
+  if (/\.(js|css|png|jpg|ico|woff2?|svg)(\?|$)/i.test(url)) return false;
+  if (/\/auth\/captcha/i.test(url)) return false;
+  const apiPattern = process.env.SIGNIN_API_URL_PATTERN || '';
+  if (apiPattern) return url.includes(apiPattern);
+  return /checkin|signin|qiandao|续命/i.test(url) || method === 'POST';
+}
+
+/**
+ * @param {import('@playwright/test').Response | null} resp
+ */
+async function readResponseBody(resp) {
+  if (!resp) return null;
+  try {
+    const contentType = resp.headers()['content-type'] || '';
+    return contentType.includes('application/json')
+      ? await resp.json()
+      : await resp.text();
+  } catch {
+    return resp.text().catch(() => null);
+  }
+}
+
+/**
  * 填写并提交签到验证码（当前为算术题），成功则弹窗关闭
  * @param {import('@playwright/test').Page} page
  * @param {import('ddddocr-node').DdddOcr} [ocr]
+ * @returns {Promise<object|string|null>} 成功时的签到接口返回（若捕获到）
  */
 export async function completeCheckinCaptcha(page, ocr) {
   const engine = ocr || (await createOcrEngine({ charset: 'math' }));
@@ -187,6 +217,11 @@ export async function completeCheckinCaptcha(page, ocr) {
 
     info(`使用签到答案: ${answer}`);
     await page.locator(CHECKIN_CAPTCHA_INPUT).fill(answer);
+
+    const responsePromise = page
+      .waitForResponse(isLikelyCheckinResponse, { timeout: 10000 })
+      .catch(() => null);
+
     await submitCheckinCaptcha(page);
 
     const dialogClosed = await page
@@ -197,7 +232,7 @@ export async function completeCheckinCaptcha(page, ocr) {
 
     if (dialogClosed) {
       info('签到验证码已通过');
-      return;
+      return readResponseBody(await responsePromise);
     }
 
     warning('签到验证码可能错误，刷新后重试');
