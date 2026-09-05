@@ -6,6 +6,7 @@ import { info, success, error, warning } from '../utils/logger.js';
 import { notifySigninSuccess, notifySigninFailure, notifyAlreadySigned } from '../utils/notifier.js';
 import { createOcrEngine } from '../utils/captcha.js';
 import { completeCheckinCaptcha } from '../utils/checkin-captcha.js';
+import { createStealthContext, humanClick, humanPause } from '../utils/stealth.js';
 
 /**
  * @param {import('@playwright/test').Response} resp
@@ -137,7 +138,7 @@ test('自动签到完整流程', async ({ browser }) => {
     if (hasSavedCookies()) {
       info('发现已保存的Cookie，尝试使用Cookie登录');
       try {
-        context = await browser.newContext({
+        context = await createStealthContext(browser, {
           storageState: getCookiePath()
         });
         const page = await context.newPage();
@@ -165,7 +166,7 @@ test('自动签到完整流程', async ({ browser }) => {
     // 步骤2: 如果需要登录，执行登录流程
     if (needLogin) {
       info('开始登录流程');
-      context = await browser.newContext();
+      context = await createStealthContext(browser);
       const page = await context.newPage();
       
       // 访问登录页面
@@ -200,7 +201,8 @@ test('自动签到完整流程', async ({ browser }) => {
     
     // 进入控制面板
     info('进入控制面板');
-    await page.getByRole('link', { name: '控制面板' }).click();
+    await humanPause(page, 500, 1200);
+    await humanClick(page.getByRole('link', { name: '控制面板' }));
     await page.waitForLoadState('networkidle');
 
     // 关闭进入控制面板后可能出现的公告弹窗
@@ -233,8 +235,8 @@ test('自动签到完整流程', async ({ browser }) => {
       .waitForResponse(isLikelyCheckinResponse, { timeout: 20000 })
       .catch(() => null);
 
-    const signinBtn = page.getByRole('button', { name: /立即续命/ });
-    await signinBtn.click();
+    await humanPause(page, 800, 1800);
+    await humanClick(page.getByRole('button', { name: /立即续命/ }));
 
     const checkinCaptchaVisible = await page
       .getByText('签到验证')

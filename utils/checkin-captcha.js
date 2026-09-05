@@ -24,9 +24,43 @@ export async function isCheckinCaptchaDialogVisible(page) {
 
 /**
  * @param {import('@playwright/test').Page} page
+ * @returns {Promise<'ready' | 'blocked' | 'timeout'>}
  */
 async function waitForCheckinCaptchaImage(page) {
-  await page.locator(CHECKIN_CAPTCHA_IMG).waitFor({ state: 'visible', timeout: 10000 });
+  const img = page.locator(CHECKIN_CAPTCHA_IMG);
+  const blocked = page.locator(CHECKIN_CAPTCHA_BOX).getByText(/已限制|锁定|脚本/);
+
+  const result = await Promise.race([
+    img.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'ready'),
+    blocked.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'blocked'),
+  ]).catch(() => 'timeout');
+
+  if (result === 'blocked') {
+    const detail = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/auth/captcha?type=checkin&_=' + Date.now(), {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        });
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }).catch(() => null);
+
+    const msg =
+      (detail && (detail.msg || detail.message)) ||
+      '检测到签到脚本，今日签到机会已锁定';
+    throw new Error(String(msg));
+  }
+
+  if (result === 'timeout') {
+    const boxText = await page.locator(CHECKIN_CAPTCHA_BOX).innerText().catch(() => '');
+    throw new Error(
+      `签到验证码图片未加载（#checkin-captcha-box 内容: ${JSON.stringify(boxText.trim())}）`
+    );
+  }
+
   await page
     .waitForFunction(() => {
       const el = document.querySelector('#checkin-captcha-box img');
@@ -34,6 +68,8 @@ async function waitForCheckinCaptchaImage(page) {
       return src.startsWith('data:image') && src.length > 1000;
     }, undefined, { timeout: 10000 })
     .catch(() => {});
+
+  return 'ready';
 }
 
 /**

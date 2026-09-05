@@ -39,6 +39,12 @@ export default defineConfig({
     
     /* Headless mode - CI 下强制无头；本地由 HEADLESS 环境变量控制 */
     headless: process.env.CI ? true : (process.env.HEADLESS === 'true'),
+
+    locale: 'zh-CN',
+    timezoneId: 'Asia/Shanghai',
+    launchOptions: {
+      args: ['--disable-blink-features=AutomationControlled'],
+    },
     
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
